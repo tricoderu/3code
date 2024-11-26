@@ -10,10 +10,8 @@ import (
 	"syscall"
 	"time"
 
-	// env "github.com/tricoderu/utils/env"
-	// env "utils/env"
-
 	"github.com/go-chi/chi/v5"
+	"github.com/joho/godotenv"
 )
 
 type Server struct {
@@ -22,15 +20,21 @@ type Server struct {
 }
 
 const (
-	EnvLink string = "03_env/ports.env"
+	EnvLink string = "02_env/ports.env"
 	WebVar  string = "TODO_FRONTEND_DIR"
 )
 
 // RunServer запускает HTTP сервер.
 func RunServer() {
-
 	// Загружаем переменные окружения из .env файла
-	webDir := env.checkEnvVar(EnvLink, WebVar)
+	err := godotenv.Load("02_env/ports.env")
+	if err != nil {
+		log.Fatalf("Фатальная ошибка: Не удалось загрузить файл .env: %v", err)
+	} else {
+		log.Println("Файл .env успешно загружен.")
+	}
+
+	webDir := os.Getenv("TODO_FRONTEND_DIR")
 
 	// Создаем маршрутизатор
 	r := chi.NewRouter()

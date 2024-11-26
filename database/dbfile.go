@@ -66,7 +66,7 @@ func SetupDatabase() string {
 	var err error
 
 	// Загружаем переменные окружения из .env файла
-	err = godotenv.Load("03_env/db.env")
+	err = godotenv.Load("02_env/db.env")
 	if err != nil {
 		log.Fatalf("Фатальная ошибка: Не удалось загрузить файл .env: %v", err)
 	} else {
