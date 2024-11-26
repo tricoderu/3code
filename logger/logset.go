@@ -1,4 +1,3 @@
-// ./logset.go
 package logger
 
 import (

@@ -1,7 +1,7 @@
 command.txt
 
 99_temp/
-03_env/
+02_env/
 01_web/
 09_logs
 database/*.txt
