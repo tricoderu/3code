@@ -15,3 +15,9 @@ server/*.txt
 main.go
 go.mod
 go.sum
+
+# любой объект
+*temp*
+
+# только файлы, но не директории
+# **/*temp*
