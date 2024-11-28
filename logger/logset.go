@@ -26,6 +26,8 @@ func InitLogger() {
 
 	// Сохраняем логи из буфера в файл
 	SaveLogsToFile(logFile)
+
+	log.Println("Логгер успешно запущен")
 }
 
 // createLogDirectory проверяет существование директории для логов и создает ее при необходимости.
