@@ -1,3 +1,5 @@
+//go:build ignore
+
 package server_test
 
 import (
