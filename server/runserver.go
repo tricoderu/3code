@@ -15,93 +15,98 @@ import (
 )
 
 type Server struct {
+	// Встраиваем *http.Server в структуру Server через указатель на стандартный HTTP-сервер из пакета net/http
 	*http.Server
+	// Объявляем канал StopChan, который будет использоваться для передачи сигналов ОС
 	StopChan chan os.Signal
 }
 
 const (
-	EnvLink string = "02_env/ports.env"
-	WebVar  string = "TODO_FRONTEND_DIR"
+	envLink   string        = "02_env/ports.env"
+	webVar    string        = "TODO_FRONTEND_DIR"
+	port7540  string        = "TODO_PORT_7540"
+	readTime  time.Duration = 10
+	writeTime time.Duration = 10
+	idleTime  time.Duration = 120
 )
 
-// RunServer запускает HTTP сервер.
 func RunServer() {
-	// Загружаем переменные окружения из .env файла
-	err := godotenv.Load("02_env/ports.env")
-	if err != nil {
-		log.Fatalf("Фатальная ошибка: Не удалось загрузить файл .env: %v", err)
-	} else {
-		log.Println("Файл .env успешно загружен.")
+	// Загружаем конфигурацию
+	if err := loadEnvConfig(); err != nil {
+		log.Fatalf("Ошибка при загрузке конфигурации сервера: %v", err)
 	}
 
-	webDir := os.Getenv("TODO_FRONTEND_DIR")
+	// Создаем экземпляр сервера
+	srv := createServer()
 
-	// Создаем маршрутизатор
-	r := chi.NewRouter()
-
-	// Создаем обработчик статических файлов (то есть нашего frontend-а)
-	r.Handle("/*", http.FileServer(http.Dir(webDir)))
-
-	// Получаем номер порта
-	port7540 := os.Getenv("TODO_PORT_7540")
-	if port7540 == "" {
-		log.Fatal("Фатальная ошибка: Переменная TODO_PORT_7540 не задана.")
-	}
-
-	// Получаем номер портов, на которых будут запущен(ы) сервер(ы)
-	ports := []string{port7540}
+	// Добавляем обработку сигналов
+	handleSignals(srv)
 
 	// Создаем WaitGroup для ожидания завершения работы серверной горутины
 	var wg sync.WaitGroup
+	wg.Add(1)
 
-	// Массив для хранения ссылок на созданные сервера
-	var servers []*Server
+	go func() {
+		defer wg.Done()
+		startServer(srv)
+	}()
 
-	// Создаем HTTP сервер, пока со всевозможными параметрами
-	// Учтем возможность создания нескольких серверов для разных целей (для разных обработчиков)
-	for _, port := range ports {
-		srv := &Server{
-			Server: &http.Server{
-				Addr:         fmt.Sprintf(":%s", port),
-				Handler:      r,
-				ReadTimeout:  10 * time.Second,
-				WriteTimeout: 10 * time.Second,
-				IdleTimeout:  120 * time.Second,
-			},
-			StopChan: make(chan os.Signal, 1),
-		}
-		wg.Add(1)
+	// Обработка остановки сервера
+	go ServerWithCancel(srv, &wg)
 
-		// Сохраняем ссылку на созданный сервер
-		servers = append(servers, srv)
-
-		// Запускаем каждый сервер в отдельной горутине
-		go func(port string, srv *Server) {
-			defer wg.Done()
-			defer close(srv.StopChan)
-
-			log.Printf("Запуск сервера на порту %s\n", port)
-
-			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				log.Fatalf("Фатальная ошибка при запуске сервера: %v", err)
-			} else {
-				log.Printf("Сервер успешно запущен на порту %s\n", port)
-			}
-		}(port, srv)
-
-		// Создаем канал, чтобы слушать и перенаправлять сигналы завершения из операционной системы (SIGINT и SIGTERM)
-		// Прежде всего, чтобы можно было нормально закрыть сессию при нажатии Ctrl+C
-		signal.Notify(srv.StopChan, syscall.SIGINT, syscall.SIGTERM)
-	}
-
-	log.Println("Ожидание остановки серверов...")
-
-	// Запускаем обработку сигналов для каждого сервера
-	for _, srv := range servers {
-		ServerWithCancel(srv, &wg)
-	}
-
-	// Ждем завершения работы горутины сервера
+	log.Println("Ожидание остановки сервера...")
 	wg.Wait()
-	log.Println("Все серверы остановлены.")
+	log.Println("Сервер остановлен.")
+}
+
+// Загружает настройки сервера из файла .env и возвращает ошибку, если не удалось.
+func loadEnvConfig() error {
+	if err := godotenv.Load(envLink); err != nil {
+		return err
+	}
+	log.Println("Файл .env с конфигурацией сервера успешно загружен.")
+	return nil
+}
+
+// Создаёт экземпляр сервера, настраивает маршруты для обслуживания статики и задаёт параметры подключения (порт и таймауты)
+func createServer() *Server {
+	webDir := os.Getenv(webVar)
+	if webDir == "" {
+		log.Fatalf("Фатальная ошибка: Переменная %v не задана.", webVar)
+	}
+
+	r := chi.NewRouter()
+	r.Handle("/*", http.FileServer(http.Dir(webDir)))
+
+	serverPort := os.Getenv(port7540)
+	if serverPort == "" {
+		log.Fatalf("Фатальная ошибка: Переменная %v не задана.", port7540)
+	}
+
+	srv := &Server{
+		Server: &http.Server{
+			Addr:         fmt.Sprintf(":%s", port7540),
+			Handler:      r,
+			ReadTimeout:  readTime * time.Second,
+			WriteTimeout: writeTime * time.Second,
+			IdleTimeout:  idleTime * time.Second,
+		},
+		StopChan: make(chan os.Signal, 1),
+	}
+
+	return srv
+}
+
+// Настраивает обработку сигналов ОС (SIGINT и SIGTERM), чтобы сервер мог корректно завершить свою работу.
+func handleSignals(srv *Server) {
+	signal.Notify(srv.StopChan, syscall.SIGINT, syscall.SIGTERM)
+}
+
+// Запускает HTTP сервер и логирует информацию о запуске.
+func startServer(srv *Server) {
+	log.Printf("Запуск сервера на %s\n", srv.Addr)
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatalf("Фатальная ошибка при запуске сервера: %v", err)
+	}
+	log.Printf("Сервер успешно запущен на %s\n", srv.Addr)
 }
